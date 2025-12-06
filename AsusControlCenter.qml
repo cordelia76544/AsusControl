@@ -1,0 +1,309 @@
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import qs.Common
+import qs.Services
+import qs.Widgets
+import qs.Modules.Plugins
+
+PluginComponent {
+  id: root
+
+  property string activeProfile: "Balanced"
+  property string activeGpuMode: "Unknown"
+  property var supportedGpuModes: []
+
+  readonly property string colorPerf: "#F38BA8"
+  readonly property string colorBal: "#CBA6F7"
+  readonly property string colorQuiet: "#94E2D5"
+  readonly property string colorGpu: "#89B4FA"
+
+  Process {
+    id: procPowerGet
+    command: ["asusctl", "profile", "-p"]
+    stdout: SplitParser {
+      onRead: line => {
+        var match = line.trim().match(/(\w+)$/)
+        if (match && ["Quiet", "Balanced", "Performance"].includes(match[1])) {
+          root.activeProfile = match[1]
+        }
+      }
+    }
+  }
+
+  Process {
+    id: procGpuGet
+    command: ["supergfxctl", "-g"]
+    stdout: SplitParser {
+      onRead: line => {
+        root.activeGpuMode = line.trim()
+      }
+    }
+  }
+
+  Process {
+    id: procGpuList
+    command: ["supergfxctl", "-s"]
+    stdout: SplitParser {
+      onRead: line => {
+        var clean = line.replace(/[\[\]']/g, "").trim()
+        if (clean.length > 0) {
+          root.supportedGpuModes = clean.split(/,\s*/)
+        }
+      }
+    }
+  }
+
+  Process {
+    id: procPowerSet
+    command: ["asusctl", "profile", "-P", "Balanced"] 
+    stderr: SplitParser { onRead: line => ToastService.showError("ASUS Error", line) }
+    onExited: code => { 
+      if(code === 0) { 
+        ToastService.showInfo("Power", "Profile switched")
+        procPowerGet.running = true 
+      } 
+    }
+  }
+
+  // [NOTE] Aggresive Default (Hopefully never gets used.)
+  property var logoutCommand: ["loginctl", "terminate-session", "self"]
+  readonly property var desktopSpecificCommands: {
+    "hyprland": ["hyprctl", "dispatch", "exit"],
+    "niri":     ["niri", "msg", "action", "quit"],
+    "sway":     ["swaymsg", "exit"],
+    "river":    ["riverctl", "exit"],
+    "wayfire":  ["wayfire", "exit"],
+    "kde":      ["qdbus", "org.kde.Shutdown", "/Shutdown", "logout"],
+    "gnome":    ["gnome-session-quit", "--logout", "--no-prompt"]
+  }
+
+  Process {
+    id: procDetectSession
+    command: ["sh", "-c", "echo $XDG_CURRENT_DESKTOP"]
+    // Run Immediately On Load
+    running: true
+    stdout: SplitParser {
+      onRead: line => {
+        const desktop = line.trim().toLowerCase()
+        console.log("Detected Desktop:", desktop)
+        if (root.desktopSpecificCommands[desktop]) {
+            root.logoutCommand = root.desktopSpecificCommands[desktop]
+        } 
+      }
+    }
+  }
+
+  Process {
+    id: procLogout
+    command: root.logoutCommand
+  }
+
+  Timer {
+    id: logoutDelayTimer
+    interval: 5000
+    repeat: false
+    onTriggered: procLogout.running = true
+  }
+
+  Process {
+    id: procGpuSet
+    command: ["supergfxctl", "-m", "Hybrid"]
+    stderr: SplitParser { onRead: line => ToastService.showError("GPU Error", line) }
+    onExited: code => { 
+      if(code === 0) {
+        ToastService.showInfo("GPU Mode Set. Session ending in 5 seconds...") 
+        logoutDelayTimer.start()
+      }
+    }
+  }
+
+  Timer {
+    interval: 3000
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: {
+      procPowerGet.running = true
+      procGpuGet.running = true
+    }
+  }
+
+  Component.onCompleted: {
+    procGpuList.running = true
+  }
+
+  function setPowerProfile(name) {
+    procPowerSet.command = ["asusctl", "profile", "-P", name]
+    procPowerSet.running = true
+    root.activeProfile = name
+  }
+
+  function setGpuMode(mode) {
+    if (mode === root.activeGpuMode) return;
+    if (procGpuSet.running) return;
+    procGpuSet.command = ["supergfxctl", "-m", mode]
+    procGpuSet.running = true
+  }
+
+  function getModeColor(modeName) {
+    if (modeName === "Performance") return root.colorPerf
+    if (modeName === "Quiet") return root.colorQuiet
+    return root.colorBal
+  }
+
+  function getModeIcon(modeName) {
+    if (modeName === "Performance") return "rocket_launch"
+    if (modeName === "Quiet") return "bedtime"
+    return "balance"
+  }
+
+  horizontalBarPill: Component {
+    Item {
+      implicitWidth: Theme.iconSize
+      implicitHeight: Theme.iconSize
+      DankIcon {
+        name: root.getModeIcon(root.activeProfile)
+        size: Theme.iconSize * 0.85
+        color: root.getModeColor(root.activeProfile)
+        anchors.centerIn: parent
+      }
+    }
+  }
+
+  popoutWidth: 400
+  popoutHeight: Math.max(200, contentWrapper.implicitHeight + 60)
+
+  popoutContent: Component {
+    PopoutComponent {
+      id: popup
+      headerText: "ASUS Control"
+
+      Item {
+        id: contentWrapper
+        width: parent.width
+        implicitHeight: mainCol.implicitHeight
+
+        Column {
+          id: mainCol
+          width: parent.width
+          spacing: Theme.spacingM
+
+          StyledText {
+            text: "Power Profile"
+            font.pixelSize: Theme.fontSizeMedium
+            font.weight: Font.Bold
+            color: Theme.surfaceVariantText
+          }
+
+          Row {
+            spacing: Theme.spacingS
+            width: parent.width
+
+            Repeater {
+              model: ["Quiet", "Balanced", "Performance"]
+
+              StyledRect {
+                width: (parent.width - (Theme.spacingS * 2)) / 3
+                height: 70
+                radius: Theme.cornerRadius
+
+                color: root.activeProfile === modelData ? Theme.surfaceContainerHigh : Theme.surfaceContainerLow
+                border.width: root.activeProfile === modelData ? 2 : 0
+                border.color: root.getModeColor(modelData)
+
+                Column {
+                  anchors.centerIn: parent
+                  spacing: 4
+
+                  DankIcon {
+                    name: root.getModeIcon(modelData)
+                    size: 20
+                    color: root.getModeColor(modelData)
+                    anchors.horizontalCenter: parent.horizontalCenter
+                  }
+
+                  StyledText {
+                    text: modelData
+                    font.pixelSize: Theme.fontSizeSmall
+                    anchors.horizontalCenter: parent.horizontalCenter
+                  }
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.setPowerProfile(modelData)
+                }
+              }
+            }
+          }
+
+          Rectangle {
+            width: parent.width
+            height: 1
+            color: Theme.outlineVariant
+            opacity: 0.5
+          }
+
+          StyledText {
+            text: "GPU Mode"
+            font.pixelSize: Theme.fontSizeMedium
+            font.weight: Font.Bold
+            color: Theme.surfaceVariantText
+          }
+
+          Flow {
+            width: parent.width
+            spacing: Theme.spacingS
+
+            Repeater {
+              model: root.supportedGpuModes
+
+              StyledRect {
+                width: (mainCol.width / 2) - Theme.spacingS
+                height: 45
+                radius: Theme.cornerRadius
+                
+                color: root.activeGpuMode === modelData ? root.colorGpu : Theme.surfaceContainerLow
+
+                Row {
+                  anchors.centerIn: parent
+                  spacing: Theme.spacingS
+
+                  DankIcon {
+                    name: "memory"
+                    size: 18
+                    color: root.activeGpuMode === modelData ? Theme.base : Theme.surfaceText
+                  }
+
+                  StyledText {
+                    text: modelData
+                    color: root.activeGpuMode === modelData ? Theme.base : Theme.surfaceText
+                    font.weight: root.activeGpuMode === modelData ? Font.Bold : Font.Normal
+                  }
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.setGpuMode(modelData)
+                }
+              }
+            }
+          }
+
+          StyledText {
+            width: parent.width
+            text: "Switching GPU mode will trigger an immediate logout."
+            font.pixelSize: Theme.fontSizeMedium
+            color: Theme.error
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+            visible: true
+          }
+        }
+      }
+    }
+  }
+}

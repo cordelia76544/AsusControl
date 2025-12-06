@@ -1,0 +1,11 @@
+{
+  "id": "asusControlCenter",
+  "name": "ASUS Control Center",
+  "description": "Manage Power Profiles and GPU Modes for ASUS Laptops",
+  "version": "1.0.0",
+  "author": "PseudoFractal",
+  "icon": "developer_board",
+  "type": "widget",
+  "component": "AsusControlCenter.qml",
+  "permissions": ["process"]
+}
