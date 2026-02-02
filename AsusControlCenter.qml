@@ -24,11 +24,16 @@ PluginComponent {
     command: ["asusctl", "profile", "get"]
     stdout: SplitParser {
       onRead: line => {
-        // asusctl profile get output usually ends with the mode name
-        var match = line.trim().match(/(\w+)$/)
-        if (match && ["Quiet", "Balanced", "Performance"].includes(match[1])) {
-          root.activeProfile = match[1]
+       
+        var lowerLine = line.toLowerCase();
+        if (lowerLine.includes("quiet")) {
+            root.activeProfile = "Quiet";
+        } else if (lowerLine.includes("balanced")) {
+            root.activeProfile = "Balanced";
+        } else if (lowerLine.includes("performance")) {
+            root.activeProfile = "Performance";
         }
+        
       }
     }
   }
