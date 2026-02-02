@@ -186,7 +186,7 @@ PluginComponent {
   popoutContent: Component {
     PopoutComponent {
       id: popup
-      headerText: "ASUS Control"
+      headerText: "ASUS Control (fixed)"
 
       Item {
         id: contentWrapper
