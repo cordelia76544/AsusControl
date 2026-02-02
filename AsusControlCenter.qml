@@ -20,9 +20,11 @@ PluginComponent {
 
   Process {
     id: procPowerGet
-    command: ["asusctl", "profile", "-p"]
+    // [FIXED] Updated for new asusctl CLI: -p -> get
+    command: ["asusctl", "profile", "get"]
     stdout: SplitParser {
       onRead: line => {
+        // asusctl profile get output usually ends with the mode name
         var match = line.trim().match(/(\w+)$/)
         if (match && ["Quiet", "Balanced", "Performance"].includes(match[1])) {
           root.activeProfile = match[1]
@@ -56,7 +58,8 @@ PluginComponent {
 
   Process {
     id: procPowerSet
-    command: ["asusctl", "profile", "-P", "Balanced"] 
+    // [FIXED] Updated for new asusctl CLI: -P -> set
+    command: ["asusctl", "profile", "set", "Balanced"] 
     stderr: SplitParser { onRead: line => ToastService.showError("ASUS Error", line) }
     onExited: code => { 
       if(code === 0) { 
@@ -134,7 +137,8 @@ PluginComponent {
   }
 
   function setPowerProfile(name) {
-    procPowerSet.command = ["asusctl", "profile", "-P", name]
+    // [FIXED] Updated for new asusctl CLI: -P -> set
+    procPowerSet.command = ["asusctl", "profile", "set", name]
     procPowerSet.running = true
     root.activeProfile = name
   }
