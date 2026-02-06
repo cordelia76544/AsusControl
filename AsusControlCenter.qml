@@ -20,23 +20,28 @@ PluginComponent {
 
   Process {
     id: procPowerGet
-    // [FIXED] Updated for new asusctl CLI: -p -> get
     command: ["asusctl", "profile", "get"]
     stdout: SplitParser {
       onRead: line => {
-       
-        var lowerLine = line.toLowerCase();
-        if (lowerLine.includes("quiet")) {
+        // [关键修复] 只有当行以 "Active profile:" 开头时才进行解析
+        if (line.startsWith("Active profile:")) {
+          const lowerLine = line.toLowerCase();
+          
+          if (lowerLine.includes("quiet")) {
             root.activeProfile = "Quiet";
-        } else if (lowerLine.includes("balanced")) {
+          } else if (lowerLine.includes("balanced")) {
             root.activeProfile = "Balanced";
-        } else if (lowerLine.includes("performance")) {
+          } else if (lowerLine.includes("performance")) {
             root.activeProfile = "Performance";
+          }
+          
+          console.log("AsusControl: Current Active Mode is " + root.activeProfile);
         }
-        
+        // 忽略后续的 AC profile 和 Battery profile 行
       }
     }
   }
+
 
   Process {
     id: procGpuGet
